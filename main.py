@@ -1,23 +1,57 @@
-import streamlit as st
-import pandas as pd
+from pathlib import Path
 import json
+
+import pandas as pd
 import requests
-from rdkit import Chem
-from rdkit.Chem import Draw
+import streamlit as st
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = BASE_DIR / "structures_by_生薬名_tagged.csv"
 
 # ページ設定
 st.set_page_config(layout="wide", page_title="生薬ビジュアル暗記アプリ", page_icon="🌿")
 
+st.markdown(
+    """
+    <style>
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            max-width: 1200px;
+        }
+        .app-shell {
+            background: linear-gradient(180deg, rgba(245, 250, 244, 0.95), rgba(255, 255, 255, 1));
+            border: 1px solid rgba(20, 60, 30, 0.08);
+            border-radius: 18px;
+            padding: 1.25rem 1.4rem;
+            box-shadow: 0 18px 45px rgba(20, 40, 20, 0.08);
+        }
+        .muted-note {
+            color: #5f6c66;
+            font-size: 0.95rem;
+        }
+        .compound-card {
+            border: 1px solid rgba(30, 60, 40, 0.12);
+            border-radius: 14px;
+            padding: 1rem 1rem 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.9);
+            margin-bottom: 0.75rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("🌿 生薬・構造式ビジュアル暗記アプリ")
-st.markdown("生薬名から、主要成分の構造式（RDKitで描画）と、起源植物の写真を確認します。")
+st.markdown("生薬名から、主要成分の構造式と起源植物の写真を確認します。")
 
 # --- データ読み込み ---
 @st.cache_data
 def load_data():
     try:
-        return pd.read_csv("structures_by_生薬名_tagged.csv")
+        return pd.read_csv(DATA_PATH)
     except FileNotFoundError:
-        st.error("エラー: 'structures_by_生薬名_tagged.csv' が同じフォルダに見つかりません。")
+        st.error("エラー: 'structures_by_生薬名_tagged.csv' がアプリ本体と同じフォルダに見つかりません。")
         return pd.DataFrame()
 
 df = load_data()
@@ -34,6 +68,13 @@ def get_smiles_from_pubchem(cid):
     except:
         pass
     return None
+
+
+@st.cache_data
+def get_pubchem_structure_image_url(cid):
+    if not cid:
+        return None
+    return f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG?image_size=large"
 
 @st.cache_data
 def get_wikipedia_image(query):
@@ -67,34 +108,38 @@ SCIENTIFIC_NAME_MAPPING = {
 
 # --- UI部分 ---
 if not df.empty:
+    st.markdown('<div class="app-shell">', unsafe_allow_html=True)
+
     # サイドバーで生薬を選択
     syoyaku_list = df['生薬名'].tolist()
     selected_syoyaku = st.sidebar.selectbox("📖 学習する生薬を選んでください", syoyaku_list)
+    st.sidebar.caption(f"登録生薬数: {len(syoyaku_list)}")
     
     # 選択された生薬のデータを抽出
     row = df[df['生薬名'] == selected_syoyaku].iloc[0]
     st.header(f"💊 {selected_syoyaku}")
+    st.markdown("<div class='muted-note'>PubChem の CID を使って、構造式画像を直接表示します。Cloud 上でも依存関係が軽くなる構成です。</div>", unsafe_allow_html=True)
     
     # レイアウト作成（左：写真、右：成分と構造式）
     col1, col2 = st.columns([1, 1])
     
     with col1:
-            st.subheader("📸 起源植物 (Wikipediaより自動取得)")
-            
-            # 辞書に学名があればそれを検索キーワードにし、なければ生薬名をそのまま使う
-            if selected_syoyaku in SCIENTIFIC_NAME_MAPPING:
-                search_keyword = SCIENTIFIC_NAME_MAPPING[selected_syoyaku]
-                display_name = f"{selected_syoyaku} ({search_keyword})"
-            else:
-                search_keyword = selected_syoyaku.replace("（末）", "").replace("コン", "")
-                display_name = search_keyword
-                
-            img_url = get_wikipedia_image(search_keyword)
-            
-            if img_url:
-                st.image(img_url, caption=display_name, use_container_width=True)
-            else:
-                st.info(f"「{display_name}」の写真が見つかりませんでした。")
+        st.subheader("📸 起源植物 (Wikipediaより自動取得)")
+
+        # 辞書に学名があればそれを検索キーワードにし、なければ生薬名をそのまま使う
+        if selected_syoyaku in SCIENTIFIC_NAME_MAPPING:
+            search_keyword = SCIENTIFIC_NAME_MAPPING[selected_syoyaku]
+            display_name = f"{selected_syoyaku} ({search_keyword})"
+        else:
+            search_keyword = selected_syoyaku.replace("（末）", "").replace("コン", "")
+            display_name = search_keyword
+
+        img_url = get_wikipedia_image(search_keyword)
+
+        if img_url:
+            st.image(img_url, caption=display_name, use_container_width=True)
+        else:
+            st.info(f"「{display_name}」の写真が見つかりませんでした。")
     with col2:
         st.subheader("🔬 主要成分と構造式")
         try:
@@ -104,20 +149,25 @@ if not df.empty:
                 cid = s.get('PubChem CID', '')
                 classes = ", ".join(s.get('class_tags', []))
                 
-                with st.expander(f"🧪 {comp_name} ({classes})", expanded=True):
+                with st.container():
+                    st.markdown('<div class="compound-card">', unsafe_allow_html=True)
+                    st.markdown(f"**🧪 {comp_name}**  ")
+                    if classes:
+                        st.caption(classes)
+
                     if cid:
+                        structure_img_url = get_pubchem_structure_image_url(cid)
+                        st.image(structure_img_url, use_container_width=True)
                         smiles = get_smiles_from_pubchem(cid)
                         if smiles:
-                            # RDKitでSMILESから画像を生成
-                            mol = Chem.MolFromSmiles(smiles)
-                            if mol:
-                                img = Draw.MolToImage(mol, size=(300, 300))
-                                st.image(img, caption=f"IUPAC SMILES: {smiles[:30]}...")
-                            else:
-                                st.warning("構造式の描画に失敗しました。")
-                        else:
-                            st.warning("PubChemからSMILESを取得できませんでした。")
+                            st.caption(f"SMILES: {smiles}")
+                        st.link_button("PubChem で開く", s.get('PubChem URL', f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}"))
                     else:
                         st.info("PubChem CIDが登録されていないため、構造式を表示できません。")
+                    st.markdown('</div>', unsafe_allow_html=True)
         except Exception as e:
             st.error(f"データの解析エラー: {e}")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+else:
+    st.warning("表示できるデータがありません。CSV ファイルの配置と内容を確認してください。")
