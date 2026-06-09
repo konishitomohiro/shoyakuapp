@@ -49,6 +49,22 @@ def get_wikipedia_image(query):
         pass
     return None
 
+# --- 生薬名から起源植物の「学名（ラテン名）」への変換辞書 ---
+# 学名を使うことで、Wikipediaから最も正確に植物の画像を引っ張れます
+SCIENTIFIC_NAME_MAPPING = {
+    "べラドンナコン": "Atropa belladonna", 
+    "アロエ（末）": "Aloe vera", # または Aloe ferox
+    "ウイキョウ（末）": "Foeniculum vulgare",
+    "ウワウルシ": "Arctostaphylos uva-ursi",
+    "オウゴン（末）": "Scutellaria baicalensis",
+    "オウバク（末）": "Phellodendron amurense",
+    "カッコン": "Pueraria lobata",
+    "センナ（末）": "Senna alexandrina",
+    "マオウ": "Ephedra sinica",
+    "オウレン（末）": "Coptis japonica",
+    "ジギタリス（末）": "Digitalis purpurea"
+}
+
 # --- UI部分 ---
 if not df.empty:
     # サイドバーで生薬を選択
@@ -63,16 +79,22 @@ if not df.empty:
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.subheader("📸 関連写真 (Wikipediaより自動取得)")
-        # 検索用のキーワード（生薬名から「末」などを除外）
-        search_keyword = selected_syoyaku.replace("（末）", "").replace("コン", "")
-        img_url = get_wikipedia_image(search_keyword)
-        
-        if img_url:
-            st.image(img_url, caption=f"{search_keyword} の関連画像", use_container_width=True)
-        else:
-            st.info("写真が見つかりませんでした。別のキーワードで検索するか、手元の図鑑を参照してください。")
-
+            st.subheader("📸 起源植物 (Wikipediaより自動取得)")
+            
+            # 辞書に学名があればそれを検索キーワードにし、なければ生薬名をそのまま使う
+            if selected_syoyaku in SCIENTIFIC_NAME_MAPPING:
+                search_keyword = SCIENTIFIC_NAME_MAPPING[selected_syoyaku]
+                display_name = f"{selected_syoyaku} ({search_keyword})"
+            else:
+                search_keyword = selected_syoyaku.replace("（末）", "").replace("コン", "")
+                display_name = search_keyword
+                
+            img_url = get_wikipedia_image(search_keyword)
+            
+            if img_url:
+                st.image(img_url, caption=display_name, use_container_width=True)
+            else:
+                st.info(f"「{display_name}」の写真が見つかりませんでした。")
     with col2:
         st.subheader("🔬 主要成分と構造式")
         try:
